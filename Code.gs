@@ -1,45 +1,57 @@
+function deleteSelfOnReturn() {
+  var returnDate = new Date('2026-04-29T08:00:00'); // Set as your return day in this format yyyy-mm-ddThh:mm:ss
+  
+  if (new Date() >= returnDate) {
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+    PropertiesService.getScriptProperties().deleteProperty('repliedNumbers');
+  }
+}
+
 function AutoReplyr() {
-  var i = [],
-      response_msg = "",
-      label_s = "",
-      label_r = "",
-      msg_threads = [];
-  
-  // Set your SMS reply here:
-  response_msg = "I'm currently out of the office and will return on Monday. Maybe."
-  
-  
-  // SETUP INSTRUCTIONS:
-  // 1. Create a new label (example: SMS) and create a new filter to assign to new messages. 
-  // 2. Optional: Create a 2nd sub-label to assign after a response is sent. (example: SMS/AutoResponse)
-  // 3. Set a time based trigger to run this function. Example: every 15 mins
-  
-  // Set your label name here.
-  label_s = "SMS"
-  
-  // Optional: After replying add this label to the thread. 
-  label_r = "SMS/AutoResponse"
-  
-  // Search for new unread messages with the label and newer than 1 hour. Set your trigger timer sooner than 1 hour.
-  msg_threads = GmailApp.search("label:" + label_s + " label:unread newer_than:1h");
-  for (i = 0; i < msg_threads.length; i++) {
-  
-    // Future logic to stop autoresponse to every message. Use a content search, not thread count or date hack.
-    // Hack logic to stop auto response based on time. This gets the date time of first message in thread. 
-    // var message = msg_threads[i].getMessages()[0];
-    // Logger.log(message.getDate());
- 
-    // Hack logic to stop auto response to new messages in a multi message chain
-    // Logger.log(msg_threads[i].getMessageCount()); //Get the number of messages in a thread
-    
-    
+  deleteSelfOnReturn();
+
+  var response_msg = "Put your away message here"; // Input your away message here
+  var label_s = "SMS";
+  var label_r = "SMS/AutoResponse";
+
+  // Get the list of numbers we've already replied to
+  var props = PropertiesService.getScriptProperties();
+  var repliedTo = JSON.parse(props.getProperty('repliedNumbers') || '[]');
+
+  var msg_threads = GmailApp.search("label:" + label_s + " label:unread newer_than:1h");
+
+  for (var i = 0; i < msg_threads.length; i++) {
+
+    // Extract the sender's phone number from the subject line
+    var subject = msg_threads[i].getFirstMessageSubject();
+    var match = subject.match(/\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
+    var senderNumber = match ? match[0].replace(/\D/g, '') : null;
+
+    // Skip if we've already replied to this number
+    if (senderNumber && repliedTo.indexOf(senderNumber) !== -1) {
+      GmailApp.markThreadRead(msg_threads[i]);
+      continue;
+    }
+
     // Reply to message
     msg_threads[i].reply(response_msg);
-    
-    // Tag as read
+
+    // Mark as read and apply labels
     GmailApp.markThreadRead(msg_threads[i]);
-    
-    //Optional: Tag the thread with additional label
-    //GmailApp.getUserLabelByName(label_r).addToThread(msg_threads[i]);
+    GmailApp.getUserLabelByName(label_s).removeFromThread(msg_threads[i]);
+    GmailApp.getUserLabelByName(label_r).addToThread(msg_threads[i]);
+
+    // Remember this number so we don't reply again
+    if (senderNumber) {
+      repliedTo.push(senderNumber);
+      props.setProperty('repliedNumbers', JSON.stringify(repliedTo));
+    }
   }
+}
+
+function clearRepliedNumbers() {
+  PropertiesService.getScriptProperties().deleteProperty('repliedNumbers');
 }
